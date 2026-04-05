@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
-import asyncio
+
 from concurrent.futures import ThreadPoolExecutor
 from crew import run_crew
 
@@ -16,7 +16,11 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -42,9 +46,13 @@ class ResearchResponse(BaseModel):
 
 def run_research_job(job_id: str, topic: str):
     jobs[job_id]["status"] = "running"
-    output = run_crew(topic)
-    jobs[job_id]["status"] = output["status"]
-    jobs[job_id]["result"] = output["result"]
+    try:
+        output = run_crew(topic)
+        jobs[job_id]["status"] = output["status"]
+        jobs[job_id]["result"] = output["result"]
+    except Exception as e:
+        jobs[job_id]["status"] = "error"
+        jobs[job_id]["result"] = f"Unexpected error while running job: {e}"
 
 
 @app.get("/")

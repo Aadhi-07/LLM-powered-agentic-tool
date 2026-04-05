@@ -1,7 +1,9 @@
 from crewai import Agent
+import os
 
 
 def create_critic(llm) -> Agent:
+    max_iter = int(os.getenv("CRITIC_MAX_ITER", "1"))
     return Agent(
         role="Quality Assurance Critic",
         goal=(
@@ -19,5 +21,5 @@ def create_critic(llm) -> Agent:
         llm=llm,
         verbose=True,
         allow_delegation=False,
-        max_iter=3,
+        max_iter=max_iter,
     )

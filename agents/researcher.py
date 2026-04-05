@@ -1,5 +1,5 @@
 from crewai import Agent
-from tools.search_tool import web_search_tool
+from tools.search_tool import web_search_tool, brave_search_tool
 
 
 def create_researcher(llm) -> Agent:
@@ -16,7 +16,7 @@ def create_researcher(llm) -> Agent:
             "information from across the web. You always search multiple times with "
             "different queries to ensure completeness and accuracy."
         ),
-        tools=[web_search_tool],
+        tools=[web_search_tool, brave_search_tool],
         llm=llm,
         verbose=True,
         allow_delegation=False,

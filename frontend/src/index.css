@@ -1,0 +1,134 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import 'highlight.js/styles/github-dark.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #4c1d95 #131324;
+}
+
+*::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: #131324;
+}
+
+*::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #4c1d95;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+  background: #0f0f1a;
+  color: #e2e8f0;
+}
+
+.markdown-content {
+  line-height: 1.72;
+  color: #dbe3ee;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4 {
+  margin-top: 1.4rem;
+  margin-bottom: 0.8rem;
+  font-weight: 700;
+  color: #f5f7ff;
+}
+
+.markdown-content h1 {
+  font-size: 1.75rem;
+}
+
+.markdown-content h2 {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  padding-bottom: 0.4rem;
+  font-size: 1.4rem;
+}
+
+.markdown-content h3 {
+  font-size: 1.15rem;
+}
+
+.markdown-content p {
+  margin-bottom: 0.8rem;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  margin: 0.8rem 0;
+  padding-left: 1.3rem;
+}
+
+.markdown-content li {
+  margin: 0.35rem 0;
+}
+
+.markdown-content a {
+  color: #a78bfa;
+  text-decoration: none;
+}
+
+.markdown-content a:hover {
+  color: #c4b5fd;
+  text-decoration: underline;
+}
+
+.markdown-content pre {
+  margin: 1rem 0;
+  overflow-x: auto;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: #090913;
+  padding: 0.9rem;
+}
+
+.markdown-content code {
+  border-radius: 0.4rem;
+  background: rgba(148, 163, 184, 0.14);
+  padding: 0.1rem 0.35rem;
+  font-size: 0.9em;
+}
+
+.markdown-content pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.markdown-content blockquote {
+  margin: 1rem 0;
+  border-left: 3px solid rgba(124, 58, 237, 0.75);
+  background: rgba(124, 58, 237, 0.08);
+  padding: 0.6rem 0.85rem;
+  color: #d6c9fb;
+}
+
+.markdown-content table {
+  margin: 1rem 0;
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+  border-radius: 0.65rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.markdown-content th,
+.markdown-content td {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  padding: 0.5rem;
+  text-align: left;
+}
+
+.markdown-content th {
+  background: rgba(30, 41, 59, 0.45);
+}
