@@ -103,9 +103,9 @@ def run_crew(topic: str) -> dict:
         
         embedder_config = None
         if memory_enabled:
-            # We enforce a local HF provider to ensure we do not hit OpenAI's rate limiter unannounced.
+            # We enforce a local Sentence Transformer provider to ensure we do not hit OpenAI's rate limiter unannounced.
             embedder_config = {
-                "provider": "huggingface",
+                "provider": "sentence-transformer",
                 "config": {
                     "model": "BAAI/bge-small-en-v1.5"
                 }

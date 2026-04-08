@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "D:\Aadhi\Projects\researchcrew-ai\test_embedder_2.py", line 6, in <module>
+    crew = Crew(
+           ^^^^^
+  File "D:\Aadhi\Projects\researchcrew-ai\venv\Lib\site-packages\pydantic\main.py", line 250, in __init__
+    validated_self = self.__pydantic_validator__.validate_python(data, self_instance=self)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pydantic_core._pydantic_core.ValidationError: 1 validation error for Crew
+  Either 'agents' and 'tasks' need to be set or 'config'. [type=missing_keys, input_value={'agents': [], 'tasks': [...AI/bge-small-en-v1.5'}}}, input_type=dict]
+
