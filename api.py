@@ -1,11 +1,12 @@
 import os
 import glob
+from pathlib import Path
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from crew import run_crew
 
 app = FastAPI(
@@ -26,6 +27,7 @@ app.add_middleware(
 )
 
 executor = ThreadPoolExecutor(max_workers=2)
+JOB_TIMEOUT_SECONDS = int(os.getenv("JOB_TIMEOUT_SECONDS", "420"))
 
 # In-memory job store
 jobs: dict = {}
@@ -47,9 +49,16 @@ class ResearchResponse(BaseModel):
 def run_research_job(job_id: str, topic: str):
     jobs[job_id]["status"] = "running"
     try:
-        output = run_crew(topic)
+        future = executor.submit(run_crew, topic)
+        output = future.result(timeout=JOB_TIMEOUT_SECONDS)
         jobs[job_id]["status"] = output["status"]
         jobs[job_id]["result"] = output["result"]
+    except FutureTimeout:
+        jobs[job_id]["status"] = "error"
+        jobs[job_id]["result"] = (
+            f"Timed out after {JOB_TIMEOUT_SECONDS}s while generating the report. "
+            "Please retry with a shorter or narrower prompt."
+        )
     except Exception as e:
         jobs[job_id]["status"] = "error"
         jobs[job_id]["result"] = f"Unexpected error while running job: {e}"
@@ -105,13 +114,23 @@ async def start_research(request: ResearchRequest, background_tasks: BackgroundT
 
 @app.post("/research/sync", response_model=ResearchResponse)
 def start_research_sync(request: ResearchRequest):
-    """Synchronous endpoint — waits for full completion (may take several minutes)."""
+    """Synchronous endpoint - waits for full completion (may take several minutes)."""
     if not request.topic.strip():
         raise HTTPException(status_code=400, detail="Topic cannot be empty.")
 
     import uuid
     job_id = str(uuid.uuid4())[:8]
-    output = run_crew(request.topic)
+    try:
+        future = executor.submit(run_crew, request.topic)
+        output = future.result(timeout=JOB_TIMEOUT_SECONDS)
+    except FutureTimeout:
+        output = {
+            "status": "error",
+            "result": (
+                f"Timed out after {JOB_TIMEOUT_SECONDS}s while generating the report. "
+                "Please retry with a shorter or narrower prompt."
+            ),
+        }
 
     return ResearchResponse(
         job_id=job_id,
@@ -153,9 +172,11 @@ def list_reports():
 
 @app.get("/reports/{filename}")
 def get_report(filename: str):
-    outputs_dir = os.path.join(os.path.dirname(__file__), "outputs")
-    filepath = os.path.join(outputs_dir, filename)
-    if not os.path.exists(filepath):
+    outputs_dir = Path(os.path.dirname(__file__)) / "outputs"
+    filepath = (outputs_dir / filename).resolve()
+    if outputs_dir.resolve() not in filepath.parents:
+        raise HTTPException(status_code=400, detail="Invalid filename.")
+    if not filepath.exists():
         raise HTTPException(status_code=404, detail="Report not found.")
     with open(filepath, "r", encoding="utf-8") as f:
         content = f.read()

@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import AgentPipeline from '../components/AgentPipeline';
 import ResearchForm from '../components/ResearchForm';
 import ResultViewer from '../components/ResultViewer';
-import { startResearchSync } from '../api/client';
+import { startResearch, getResearchStatus } from '../api/client';
 
-const AGENT_NAMES = ['Researcher', 'Analyst', 'Writer', 'Critic'];
+const AGENT_NAMES = ['Planner', 'Executor'];
 const ESTIMATED_TOTAL_SECONDS = 120;
 
-function formatEta(seconds) {
+function formatDuration(seconds) {
   const safe = Math.max(0, seconds);
   const mins = Math.floor(safe / 60);
   const secs = safe % 60;
@@ -19,10 +19,18 @@ function HomePage() {
   const [result, setResult] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
-  const [etaSeconds, setEtaSeconds] = useState(ESTIMATED_TOTAL_SECONDS);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [error, setError] = useState('');
 
   const timerRef = useRef(null);
+  const pollRef = useRef(null);
+  const etaSeconds = Math.max(0, ESTIMATED_TOTAL_SECONDS - elapsedSeconds);
+  const overEstimateSeconds = Math.max(0, elapsedSeconds - ESTIMATED_TOTAL_SECONDS);
+  const isOverEstimate = isRunning && overEstimateSeconds > 0;
+  const runningProgress = Math.min(
+    95,
+    Math.round((Math.min(elapsedSeconds, ESTIMATED_TOTAL_SECONDS) / ESTIMATED_TOTAL_SECONDS) * 100),
+  );
 
   const activeAgentName = useMemo(() => {
     if (!isRunning || activeIndex < 0 || activeIndex >= AGENT_NAMES.length) {
@@ -38,7 +46,20 @@ function HomePage() {
     }
   };
 
-  useEffect(() => () => clearTimer(), []);
+  const clearPoller = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
+  useEffect(
+    () => () => {
+      clearTimer();
+      clearPoller();
+    },
+    [],
+  );
 
   const handleStartResearch = async (event) => {
     event.preventDefault();
@@ -51,35 +72,66 @@ function HomePage() {
     setResult('');
     setError('');
     setActiveIndex(0);
-    setEtaSeconds(ESTIMATED_TOTAL_SECONDS);
+    setElapsedSeconds(0);
 
     clearTimer();
+    clearPoller();
+
     timerRef.current = setInterval(() => {
-      setEtaSeconds((prev) => {
-        const next = Math.max(0, prev - 1);
-        const elapsed = ESTIMATED_TOTAL_SECONDS - next;
-        const nextAgent = Math.min(3, Math.floor(elapsed / 30));
+      setElapsedSeconds((prev) => {
+        const next = prev + 1;
+        const nextAgent = Math.min(1, Math.floor(next / 60));
         setActiveIndex(nextAgent);
         return next;
       });
     }, 1000);
 
     try {
-      const data = await startResearchSync(topic.trim());
-      const generated = data?.result?.trim();
-      if (!generated) {
-        setError('Research completed but no report text was returned.');
+      const queued = await startResearch(topic.trim());
+      const jobId = queued?.job_id;
+      if (!jobId) {
+        clearTimer();
+        setIsRunning(false);
+        setError('Unable to start research job. Please try again.');
         return;
       }
 
-      setResult(generated);
-      setActiveIndex(3);
-      setEtaSeconds(0);
+      pollRef.current = setInterval(async () => {
+        try {
+          const statusRes = await getResearchStatus(jobId);
+          const status = statusRes?.status;
+
+          if (status === 'queued' || status === 'running') {
+            return;
+          }
+
+          clearPoller();
+          clearTimer();
+          setIsRunning(false);
+
+          const payload = (statusRes?.result || '').trim();
+          if (status === 'success') {
+            if (!payload) {
+              setError('Research completed but no report text was returned.');
+            } else {
+              setResult(payload);
+              setActiveIndex(1);
+            }
+          } else {
+            setError(payload || 'Research failed. Please try again.');
+          }
+        } catch (pollError) {
+          clearPoller();
+          clearTimer();
+          setIsRunning(false);
+          setError(pollError.message || 'Failed while checking job status.');
+        }
+      }, 2000);
     } catch (err) {
-      setError(err.message || 'Unexpected error while running research.');
-    } finally {
       clearTimer();
+      clearPoller();
       setIsRunning(false);
+      setError(err.message || 'Unexpected error while running research.');
     }
   };
 
@@ -118,7 +170,7 @@ function HomePage() {
           ResearchCrew AI
         </h2>
         <p className="max-w-3xl text-sm text-slate-300 sm:text-base">
-          Run a coordinated 4-agent workflow where each specialist refines the previous stage into a polished markdown report.
+          Run a coordinated Agentic workflow where a Planner outlines the steps and an Autonomous Executor resolves them iteratively to produce a polished markdown report.
         </p>
       </section>
 
@@ -132,17 +184,33 @@ function HomePage() {
               <p className="text-lg font-semibold text-slate-100">{activeAgentName}</p>
             </div>
             <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Estimated Time Remaining</p>
-              <p className="text-lg font-semibold text-accent">{isRunning ? formatEta(etaSeconds) : '0:00'}</p>
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-400">
+                {isOverEstimate ? 'Running Beyond Estimate' : 'Estimated Time Remaining'}
+              </p>
+              <p className="text-lg font-semibold text-accent">
+                {isRunning
+                  ? isOverEstimate
+                    ? `+${formatDuration(overEstimateSeconds)}`
+                    : formatDuration(etaSeconds)
+                  : '0:00'}
+              </p>
             </div>
           </div>
           <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-800">
             <div
-              className={`h-full rounded-full bg-gradient-to-r from-researcher via-accent to-critic ${
-                isRunning ? 'w-2/5 animate-pulse' : result ? 'w-full' : 'w-0'
+              className={`h-full rounded-full bg-gradient-to-r from-researcher to-accent ${
+                isRunning ? 'animate-pulse' : ''
               }`}
+              style={{
+                width: isRunning ? `${runningProgress}%` : result ? '100%' : '0%',
+              }}
             />
           </div>
+          {isOverEstimate && !error && (
+            <p className="mt-3 text-sm text-amber-300">
+              This run is taking longer than estimated, but it is still in progress.
+            </p>
+          )}
           {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}
         </section>
       )}

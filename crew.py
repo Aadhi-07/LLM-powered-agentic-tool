@@ -1,14 +1,59 @@
 import os
 import re
+import sys
 import time
 import random
-from crewai import Crew, Task, Process
-from crewai import LLM
+from pathlib import Path
 from dotenv import load_dotenv
 
+def configure_local_crewai_storage() -> Path:
+    """Force CrewAI runtime storage into a writable local project folder."""
+    storage_root = Path(__file__).resolve().parent / ".crewai_data"
+    storage_root.mkdir(parents=True, exist_ok=True)
+
+    # CrewAI uses appdirs for multiple SQLite/LanceDB stores. In restricted
+    # environments, OS-level app-data folders may be non-writable.
+    os.environ["APPDATA"] = str(storage_root)
+    os.environ["LOCALAPPDATA"] = str(storage_root)
+    os.environ["XDG_DATA_HOME"] = str(storage_root)
+    os.environ.setdefault("OTEL_SDK_DISABLED", "true")
+    os.environ.setdefault("CREWAI_DISABLE_TELEMETRY", "true")
+    os.environ.setdefault("CREWAI_DISABLE_TRACKING", "true")
+    return storage_root
+
+
+configure_local_crewai_storage()
+
+from crewai import Crew, Task, Process
+from crewai import LLM
+import crewai.utilities.paths as crewai_paths
+import crewai.memory.storage.kickoff_task_outputs_storage as kickoff_storage
 from agents import create_planner, create_executor
 
 load_dotenv()
+
+
+def configure_crewai_runtime_paths() -> Path:
+    """Patch CrewAI internal storage paths to use a writable local folder."""
+    db_root = Path(__file__).resolve().parent / ".crewai_data" / "db"
+    db_root.mkdir(parents=True, exist_ok=True)
+
+    def _local_db_storage_path() -> str:
+        db_root.mkdir(parents=True, exist_ok=True)
+        return str(db_root)
+
+    crewai_paths.db_storage_path = _local_db_storage_path
+    kickoff_storage.db_storage_path = _local_db_storage_path
+    return db_root
+
+
+def configure_console_encoding() -> None:
+    """Avoid Windows codepage crashes when CrewAI emits unicode logs."""
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 
 def build_llm() -> LLM:
@@ -49,6 +94,15 @@ def _is_rate_limit_error(error_text: str) -> bool:
     )
 
 
+def _is_tool_use_failed_error(error_text: str) -> bool:
+    lowered = error_text.lower()
+    return (
+        "tool_use_failed" in lowered
+        or "failed to call a function" in lowered
+        or "badrequesterror" in lowered and "groqexception" in lowered
+    )
+
+
 def _compute_backoff_seconds(base_backoff: float, attempt: int, provider_wait: float) -> float:
     exp_wait = base_backoff * (2 ** attempt)
     jitter = random.uniform(0.25, 1.0)
@@ -74,9 +128,10 @@ def build_tasks(topic: str, planner, executor) -> list:
             f"Fulfill the following user request entirely based on the plan provided in the preceding task: '{topic}'\n\n"
             "Instructions:\n"
             "1. Read the plan and perform the steps systematically.\n"
-            "2. Utilize tools: web search, document reader, calculator, etc., when required.\n"
-            "3. If a tool fails (e.g., search gives no results, or calculator throws error), immediately rethink -> try a different query or tool.\n"
-            "4. Combine and structure all gathered facts/results into a beautiful, coherent final response.\n"
+            "2. Use at most ONE tool call per reasoning step, then wait for the tool result before deciding next action.\n"
+            "3. Keep tool queries compact and valid JSON-safe strings; avoid batching many queries in one call.\n"
+            "4. If a tool fails (e.g., no results or error), rethink and try one alternative query/tool.\n"
+            "5. Combine and structure all gathered facts/results into a coherent final response with sources.\n"
         ),
         expected_output="The final properly structured output satisfying every detail of the user's initial request.",
         agent=executor,
@@ -89,6 +144,8 @@ def build_tasks(topic: str, planner, executor) -> list:
 def run_crew(topic: str) -> dict:
     """Run the Agentic execution pipeline. Returns dict with status and result."""
     try:
+        configure_console_encoding()
+        configure_crewai_runtime_paths()
         llm = build_llm()
 
         planner = create_planner(llm)
@@ -98,16 +155,17 @@ def run_crew(topic: str) -> dict:
 
         max_rpm = int(os.getenv("CREW_MAX_RPM", "15"))
 
-        # Enable long/short term Memory using HuggingFace sentence transformers to avoid OpenAI defaults
-        memory_enabled = os.getenv("ENABLE_MEMORY", "true").strip().lower() == "true"
+        # Memory tools can trigger aggressive tool-calling patterns on some models.
+        # Keep memory opt-in to improve compatibility with Groq function-calling.
+        memory_enabled = os.getenv("ENABLE_MEMORY", "false").strip().lower() == "true"
         
         embedder_config = None
         if memory_enabled:
-            # We enforce a local Sentence Transformer provider to ensure we do not hit OpenAI's rate limiter unannounced.
+            # We enforce a local ONNX provider to ensure we do not hit OpenAI's rate limiter and avoid PyTorch Application Control issues on Windows
             embedder_config = {
-                "provider": "sentence-transformer",
+                "provider": "onnx",
                 "config": {
-                    "model": "BAAI/bge-small-en-v1.5"
+                    "model": "all-MiniLM-L6-v2"
                 }
             }
 
@@ -116,7 +174,7 @@ def run_crew(topic: str) -> dict:
             agents=[planner, executor],
             tasks=tasks,
             process=Process.sequential,
-            verbose=True,
+            verbose=os.getenv("CREW_VERBOSE", "false").strip().lower() == "true",
             max_rpm=max_rpm,
             memory=memory_enabled,
             embedder=embedder_config,
@@ -132,6 +190,18 @@ def run_crew(topic: str) -> dict:
                 break
             except Exception as kickoff_error:
                 error_text = str(kickoff_error)
+                if _is_tool_use_failed_error(error_text) and memory_enabled:
+                    memory_enabled = False
+                    crew = Crew(
+                        agents=[planner, executor],
+                        tasks=tasks,
+                        process=Process.sequential,
+                        verbose=os.getenv("CREW_VERBOSE", "false").strip().lower() == "true",
+                        max_rpm=max_rpm,
+                        memory=False,
+                        embedder=None,
+                    )
+                    continue
                 if attempt >= retries or not _is_rate_limit_error(error_text):
                     raise
 

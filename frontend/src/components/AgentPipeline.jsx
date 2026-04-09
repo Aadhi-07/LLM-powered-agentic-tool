@@ -1,37 +1,21 @@
-import { ArrowRight, BarChart3, BookOpenText, Pencil, ShieldCheck } from 'lucide-react';
+import { ArrowRight, ListChecks, Bot } from 'lucide-react';
 
 const AGENTS = [
   {
-    key: 'researcher',
-    title: 'Researcher',
-    icon: BookOpenText,
+    key: 'planner',
+    title: 'Planner Agent',
+    icon: ListChecks,
     color: 'text-researcher',
     ring: 'ring-researcher/60',
     bg: 'bg-researcher/15',
   },
   {
-    key: 'analyst',
-    title: 'Analyst',
-    icon: BarChart3,
-    color: 'text-analyst',
-    ring: 'ring-analyst/60',
-    bg: 'bg-analyst/15',
-  },
-  {
-    key: 'writer',
-    title: 'Writer',
-    icon: Pencil,
-    color: 'text-writer',
-    ring: 'ring-writer/60',
-    bg: 'bg-writer/15',
-  },
-  {
-    key: 'critic',
-    title: 'Critic',
-    icon: ShieldCheck,
-    color: 'text-critic',
-    ring: 'ring-critic/60',
-    bg: 'bg-critic/15',
+    key: 'executor',
+    title: 'Executor Agent',
+    icon: Bot,
+    color: 'text-accent',
+    ring: 'ring-accent/60',
+    bg: 'bg-accent/15',
   },
 ];
 
@@ -40,7 +24,7 @@ function AgentPipeline({ activeIndex = -1, running = false, completed = false })
     <div className="rounded-2xl border border-slate-700/70 bg-card/70 p-4 shadow-2xl shadow-black/25 sm:p-6">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-lg font-semibold text-slate-100">Agent Pipeline</h3>
-        <p className="text-sm text-slate-400">Researcher to Analyst to Writer to Critic</p>
+        <p className="text-sm text-slate-400">Planner to Executor</p>
       </div>
 
       <div className="flex flex-col items-stretch justify-center gap-2 md:flex-row md:items-center md:gap-3">

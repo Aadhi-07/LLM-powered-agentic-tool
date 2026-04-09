@@ -7,9 +7,9 @@ with open('out2.txt', 'w') as f:
             agents=[],
             tasks=[],
             embedder={
-                "provider": "sentence-transformer",
+                "provider": "onnx",
                 "config": {
-                    "model": "BAAI/bge-small-en-v1.5"
+                    "model": "all-MiniLM-L6-v2"
                 }
             }
         )

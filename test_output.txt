@@ -1,0 +1,2 @@
+Success:
+{'status': 'error', 'topic': 'What is 2+2?', 'result': 'Error: litellm.InternalServerError: InternalServerError: GroqException - [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions'}
