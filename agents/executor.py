@@ -3,7 +3,7 @@ import os
 from tools import (
     web_search_tool, brave_search_tool,
     calculator_tool, document_reader_tool,
-    save_report_tool, read_report_tool
+    save_report_tool, read_report_tool, wikipedia_tool
 )
 
 def create_executor(llm) -> Agent:
@@ -22,7 +22,7 @@ def create_executor(llm) -> Agent:
         tools=[
             web_search_tool, brave_search_tool,
             calculator_tool, document_reader_tool,
-            save_report_tool, read_report_tool
+            save_report_tool, read_report_tool, wikipedia_tool
         ],
         llm=llm,
         verbose=True,

@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import AgentPipeline from '../components/AgentPipeline';
 import ResearchForm from '../components/ResearchForm';
 import ResultViewer from '../components/ResultViewer';
@@ -16,6 +16,7 @@ function formatDuration(seconds) {
 
 function HomePage() {
   const [topic, setTopic] = useState('');
+  const [mode, setMode] = useState('fast');
   const [result, setResult] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -87,7 +88,7 @@ function HomePage() {
     }, 1000);
 
     try {
-      const queued = await startResearch(topic.trim());
+      const queued = await startResearch(topic.trim(), mode);
       const jobId = queued?.job_id;
       if (!jobId) {
         clearTimer();
@@ -218,6 +219,8 @@ function HomePage() {
       <ResearchForm
         topic={topic}
         setTopic={setTopic}
+        mode={mode}
+        setMode={setMode}
         onSubmit={handleStartResearch}
         isRunning={isRunning}
         disabled={false}

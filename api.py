@@ -36,6 +36,7 @@ jobs: dict = {}
 class ResearchRequest(BaseModel):
     topic: str
     job_id: Optional[str] = None
+    mode: Optional[str] = "fast"
 
 
 class ResearchResponse(BaseModel):
@@ -46,10 +47,10 @@ class ResearchResponse(BaseModel):
     message: Optional[str] = None
 
 
-def run_research_job(job_id: str, topic: str):
+def run_research_job(job_id: str, topic: str, mode: str = "fast"):
     jobs[job_id]["status"] = "running"
     try:
-        future = executor.submit(run_crew, topic)
+        future = executor.submit(run_crew, topic, mode)
         output = future.result(timeout=JOB_TIMEOUT_SECONDS)
         jobs[job_id]["status"] = output["status"]
         jobs[job_id]["result"] = output["result"]
@@ -102,7 +103,7 @@ async def start_research(request: ResearchRequest, background_tasks: BackgroundT
         "result": None,
     }
 
-    background_tasks.add_task(run_research_job, job_id, request.topic)
+    background_tasks.add_task(run_research_job, job_id, request.topic, request.mode)
 
     return ResearchResponse(
         job_id=job_id,
@@ -121,7 +122,7 @@ def start_research_sync(request: ResearchRequest):
     import uuid
     job_id = str(uuid.uuid4())[:8]
     try:
-        future = executor.submit(run_crew, request.topic)
+        future = executor.submit(run_crew, request.topic, request.mode)
         output = future.result(timeout=JOB_TIMEOUT_SECONDS)
     except FutureTimeout:
         output = {

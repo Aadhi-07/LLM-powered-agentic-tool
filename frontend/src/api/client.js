@@ -46,9 +46,9 @@ export async function startResearchSync(topic) {
   }
 }
 
-export async function startResearch(topic) {
+export async function startResearch(topic, mode = 'fast') {
   try {
-    const { data } = await api.post('/research', { topic });
+    const { data } = await api.post('/research', { topic, mode });
     return data;
   } catch (error) {
     throw new Error(normalizeError(error));

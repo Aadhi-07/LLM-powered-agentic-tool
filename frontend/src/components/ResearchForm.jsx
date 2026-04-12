@@ -1,4 +1,4 @@
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Zap, Brain } from 'lucide-react';
 
 const EXAMPLES = [
   'Latest breakthroughs in AI agents for autonomous software development',
@@ -6,12 +6,44 @@ const EXAMPLES = [
   'Compare open-source vector databases for enterprise RAG systems',
 ];
 
-function ResearchForm({ topic, setTopic, onSubmit, isRunning, disabled }) {
+function ResearchForm({ topic, setTopic, mode, setMode, onSubmit, isRunning, disabled }) {
   return (
     <form onSubmit={onSubmit} className="space-y-4 rounded-2xl border border-slate-700/70 bg-card/70 p-5 sm:p-6">
-      <div className="flex items-center gap-2 text-slate-200">
-        <Sparkles size={18} className="text-accent" />
-        <h2 className="text-lg font-semibold">Choose a Research Topic</h2>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex items-center gap-2 text-slate-200">
+          <Sparkles size={18} className="text-accent" />
+          <h2 className="text-lg font-semibold">Choose a Research Topic</h2>
+        </div>
+        
+        {/* Fast/Deep Mode Toggle */}
+        <div className="flex items-center rounded-lg bg-slate-900 border border-slate-700/80 p-1 w-max">
+          <button
+            type="button"
+            onClick={() => setMode('fast')}
+            disabled={disabled || isRunning}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+              mode === 'fast' 
+                ? 'bg-researcher/20 text-researcher shadow-sm' 
+                : 'text-slate-400 hover:text-slate-300'
+            }`}
+          >
+            <Zap size={14} />
+            Fast
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('deep')}
+            disabled={disabled || isRunning}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+              mode === 'deep' 
+                ? 'bg-critic/20 text-critic shadow-sm' 
+                : 'text-slate-400 hover:text-slate-300'
+            }`}
+          >
+            <Brain size={14} />
+            Deep
+          </button>
+        </div>
       </div>
 
       <textarea
@@ -40,7 +72,7 @@ function ResearchForm({ topic, setTopic, onSubmit, isRunning, disabled }) {
         disabled={disabled || isRunning || !topic.trim()}
         className="inline-flex w-full items-center justify-center rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {isRunning ? 'Researching...' : 'Start Research'}
+        {isRunning ? 'Researching...' : `Start Research (${mode === 'fast' ? '< 10 sec' : '~ 1-2 min'})`}
       </button>
     </form>
   );

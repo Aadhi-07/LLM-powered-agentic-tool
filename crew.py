@@ -109,25 +109,27 @@ def _compute_backoff_seconds(base_backoff: float, attempt: int, provider_wait: f
     return max(exp_wait + jitter, provider_wait + 1.0)
 
 
-def build_tasks(topic: str, planner, executor) -> list:
-    # 1. Multi-step Task execution planning phase
-    planning_task = Task(
-        description=(
-            f"Analyze the user's request: '{topic}'.\n\n"
-            "Decompose this request into a logical, sequential plan. Outline exactly what information "
-            "needs to be searched, what math needs to be evaluated, what needs to be synthesized. "
-            "Do NOT execute the plan. Return explicit numbered steps."
-        ),
-        expected_output="An exact, numbered list of actionable steps breaking down the user query.",
-        agent=planner,
-    )
+def build_tasks(topic: str, executor, planner=None) -> list:
+    tasks = []
+    
+    if planner:
+        planning_task = Task(
+            description=(
+                f"Analyze the user's request: '{topic}'.\n\n"
+                "Decompose this request into a logical, sequential plan. Outline exactly what information "
+                "needs to be searched, what math needs to be evaluated, what needs to be synthesized. "
+                "Do NOT execute the plan. Return explicit numbered steps."
+            ),
+            expected_output="An exact, numbered list of actionable steps breaking down the user query.",
+            agent=planner,
+        )
+        tasks.append(planning_task)
 
-    # 2. Iterative execution phase inside ReAct loop
     execution_task = Task(
         description=(
-            f"Fulfill the following user request entirely based on the plan provided in the preceding task: '{topic}'\n\n"
+            f"Fulfill the following user request: '{topic}'\n\n"
             "Instructions:\n"
-            "1. Read the plan and perform the steps systematically.\n"
+            "1. Read the request and perform necessary steps directly and quickly.\n"
             "2. Use at most ONE tool call per reasoning step, then wait for the tool result before deciding next action.\n"
             "3. Keep tool queries compact and valid JSON-safe strings; avoid batching many queries in one call.\n"
             "4. If a tool fails (e.g., no results or error), rethink and try one alternative query/tool.\n"
@@ -135,23 +137,25 @@ def build_tasks(topic: str, planner, executor) -> list:
         ),
         expected_output="The final properly structured output satisfying every detail of the user's initial request.",
         agent=executor,
-        context=[planning_task],
+        context=[planning_task] if planner else [],
     )
+    tasks.append(execution_task)
 
-    return [planning_task, execution_task]
+    return tasks
 
 
-def run_crew(topic: str) -> dict:
+def run_crew(topic: str, mode: str = "fast") -> dict:
     """Run the Agentic execution pipeline. Returns dict with status and result."""
     try:
         configure_console_encoding()
         configure_crewai_runtime_paths()
         llm = build_llm()
 
-        planner = create_planner(llm)
         executor = create_executor(llm)
+        planner = create_planner(llm) if mode == "deep" else None
+        agents = [planner, executor] if planner else [executor]
 
-        tasks = build_tasks(topic, planner, executor)
+        tasks = build_tasks(topic, executor, planner)
 
         max_rpm = int(os.getenv("CREW_MAX_RPM", "15"))
 
@@ -169,9 +173,8 @@ def run_crew(topic: str) -> dict:
                 }
             }
 
-        # Initialize Crew
         crew = Crew(
-            agents=[planner, executor],
+            agents=agents,
             tasks=tasks,
             process=Process.sequential,
             verbose=os.getenv("CREW_VERBOSE", "false").strip().lower() == "true",
@@ -193,7 +196,7 @@ def run_crew(topic: str) -> dict:
                 if _is_tool_use_failed_error(error_text) and memory_enabled:
                     memory_enabled = False
                     crew = Crew(
-                        agents=[planner, executor],
+                        agents=agents,
                         tasks=tasks,
                         process=Process.sequential,
                         verbose=os.getenv("CREW_VERBOSE", "false").strip().lower() == "true",
