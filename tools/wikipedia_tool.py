@@ -1,5 +1,17 @@
+import time
 import requests
 from crewai.tools import BaseTool
+
+# Simple in-process TTL cache: {query_lower: (result_str, expire_ts)}
+_CACHE: dict[str, tuple[str, float]] = {}
+_TTL = 300  # 5 minutes
+_MAX_OUTPUT_TOKENS = 1500  # ~6000 chars before it burns context
+
+
+def _truncate(text: str, max_chars: int = _MAX_OUTPUT_TOKENS * 4) -> str:
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + "\n\n[…output truncated to stay within token limit]"
 
 
 class WikipediaTool(BaseTool):
@@ -11,6 +23,14 @@ class WikipediaTool(BaseTool):
     )
 
     def _run(self, query: str) -> str:
+        key = query.strip().lower()
+
+        # Cache hit
+        if key in _CACHE:
+            result, expires = _CACHE[key]
+            if time.time() < expires:
+                return result
+
         try:
             url = "https://en.wikipedia.org/w/api.php"
             params = {
@@ -21,7 +41,8 @@ class WikipediaTool(BaseTool):
                 "utf8": 1,
                 "srlimit": 3,
             }
-            response = requests.get(url, params=params, timeout=5)
+            response = requests.get(url, params=params, timeout=8)
+            response.raise_for_status()
             data = response.json()
             results = []
             for row in data.get("query", {}).get("search", []):
@@ -33,9 +54,13 @@ class WikipediaTool(BaseTool):
                 results.append(f"Title: {row['title']}\nSnippet: {snippet}")
             if not results:
                 return "No Wikipedia results found."
-            return "\n\n".join(results)
+            result = "\n\n".join(results)
         except Exception as e:
             return f"Wikipedia search failed: {e}"
+
+        result = _truncate(result)
+        _CACHE[key] = (result, time.time() + _TTL)
+        return result
 
 
 wikipedia_tool = WikipediaTool()

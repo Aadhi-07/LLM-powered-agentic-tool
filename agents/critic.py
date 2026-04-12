@@ -3,23 +3,16 @@ import os
 
 
 def create_critic(llm) -> Agent:
-    max_iter = int(os.getenv("CRITIC_MAX_ITER", "1"))
     return Agent(
-        role="Quality Assurance Critic",
-        goal=(
-            "Review the written report for quality, accuracy, completeness, and clarity. "
-            "Check coverage of major aspects, factual accuracy, logical structure, and "
-            "professional writing. Return the full improved final version of the report."
-        ),
+        role="Critic",
+        goal="Review and improve the executor's output for quality and completeness. Return the full corrected version.",
         backstory=(
-            "You are a meticulous editor and QA specialist with a background in academic "
-            "publishing and journalism. You strengthen narratives, fix inaccuracies, and "
-            "ensure the final output meets the highest professional standards. "
-            "You always return the complete corrected report, not just a critique."
+            "You are a sharp editor. Fix inaccuracies, strengthen the structure, "
+            "and return the complete polished report — never a partial critique."
         ),
         tools=[],
         llm=llm,
         verbose=True,
         allow_delegation=False,
-        max_iter=max_iter,
+        max_iter=1,
     )

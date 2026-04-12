@@ -3,16 +3,18 @@ import re
 import sys
 import time
 import random
+import logging
 from pathlib import Path
 from dotenv import load_dotenv
+
+log = logging.getLogger("researchcrew.crew")
+
 
 def configure_local_crewai_storage() -> Path:
     """Force CrewAI runtime storage into a writable local project folder."""
     storage_root = Path(__file__).resolve().parent / ".crewai_data"
     storage_root.mkdir(parents=True, exist_ok=True)
 
-    # CrewAI uses appdirs for multiple SQLite/LanceDB stores. In restricted
-    # environments, OS-level app-data folders may be non-writable.
     os.environ["APPDATA"] = str(storage_root)
     os.environ["LOCALAPPDATA"] = str(storage_root)
     os.environ["XDG_DATA_HOME"] = str(storage_root)
@@ -28,7 +30,7 @@ from crewai import Crew, Task, Process
 from crewai import LLM
 import crewai.utilities.paths as crewai_paths
 import crewai.memory.storage.kickoff_task_outputs_storage as kickoff_storage
-from agents import create_planner, create_executor
+from agents import create_planner, create_executor, create_critic
 
 load_dotenv()
 
@@ -99,7 +101,7 @@ def _is_tool_use_failed_error(error_text: str) -> bool:
     return (
         "tool_use_failed" in lowered
         or "failed to call a function" in lowered
-        or "badrequesterror" in lowered and "groqexception" in lowered
+        or ("badrequesterror" in lowered and "groqexception" in lowered)
     )
 
 
@@ -109,37 +111,44 @@ def _compute_backoff_seconds(base_backoff: float, attempt: int, provider_wait: f
     return max(exp_wait + jitter, provider_wait + 1.0)
 
 
-def build_tasks(topic: str, executor, planner=None) -> list:
+def build_tasks(topic: str, executor, planner=None, critic=None) -> list:
     tasks = []
-    
+
     if planner:
         planning_task = Task(
             description=(
-                f"Analyze the user's request: '{topic}'.\n\n"
-                "Decompose this request into a logical, sequential plan. Outline exactly what information "
-                "needs to be searched, what math needs to be evaluated, what needs to be synthesized. "
-                "Do NOT execute the plan. Return explicit numbered steps."
+                f"User request: '{topic}'. "
+                "Output a numbered list of steps needed to answer it. Do NOT execute them."
             ),
-            expected_output="An exact, numbered list of actionable steps breaking down the user query.",
+            expected_output="Numbered step-by-step plan.",
             agent=planner,
         )
         tasks.append(planning_task)
 
     execution_task = Task(
         description=(
-            f"Fulfill the following user request: '{topic}'\n\n"
-            "Instructions:\n"
-            "1. Read the request and perform necessary steps directly and quickly.\n"
-            "2. Use at most ONE tool call per reasoning step, then wait for the tool result before deciding next action.\n"
-            "3. Keep tool queries compact and valid JSON-safe strings; avoid batching many queries in one call.\n"
-            "4. If a tool fails (e.g., no results or error), rethink and try one alternative query/tool.\n"
-            "5. Combine and structure all gathered facts/results into a coherent final response with sources.\n"
+            f"Answer this request: '{topic}'. "
+            "Use one tool at a time. Wait for each result. "
+            "If a tool fails, try one alternative. "
+            "Return a structured answer with sources."
         ),
-        expected_output="The final properly structured output satisfying every detail of the user's initial request.",
+        expected_output="Structured, sourced answer to the user's request.",
         agent=executor,
         context=[planning_task] if planner else [],
     )
     tasks.append(execution_task)
+
+    if critic:
+        critic_task = Task(
+            description=(
+                "Review the executor's output. Fix inaccuracies, improve clarity, "
+                "and return the complete polished final version."
+            ),
+            expected_output="Complete, polished, accurate final report.",
+            agent=critic,
+            context=[execution_task],
+        )
+        tasks.append(critic_task)
 
     return tasks
 
@@ -153,24 +162,21 @@ def run_crew(topic: str, mode: str = "fast") -> dict:
 
         executor = create_executor(llm)
         planner = create_planner(llm) if mode == "deep" else None
-        agents = [planner, executor] if planner else [executor]
+        critic = create_critic(llm) if mode == "deep" else None
 
-        tasks = build_tasks(topic, executor, planner)
+        agents = [a for a in [planner, executor, critic] if a is not None]
+
+        tasks = build_tasks(topic, executor, planner, critic)
 
         max_rpm = int(os.getenv("CREW_MAX_RPM", "15"))
 
-        # Memory tools can trigger aggressive tool-calling patterns on some models.
-        # Keep memory opt-in to improve compatibility with Groq function-calling.
         memory_enabled = os.getenv("ENABLE_MEMORY", "false").strip().lower() == "true"
-        
+
         embedder_config = None
         if memory_enabled:
-            # We enforce a local ONNX provider to ensure we do not hit OpenAI's rate limiter and avoid PyTorch Application Control issues on Windows
             embedder_config = {
                 "provider": "onnx",
-                "config": {
-                    "model": "all-MiniLM-L6-v2"
-                }
+                "config": {"model": "all-MiniLM-L6-v2"},
             }
 
         crew = Crew(
@@ -210,6 +216,7 @@ def run_crew(topic: str, mode: str = "fast") -> dict:
 
                 provider_wait = _extract_retry_seconds(error_text)
                 wait_seconds = _compute_backoff_seconds(base_backoff, attempt, provider_wait)
+                log.warning("Rate limit hit, waiting %.1fs (attempt %d/%d)", wait_seconds, attempt + 1, retries)
                 time.sleep(wait_seconds)
                 attempt += 1
 
@@ -233,13 +240,16 @@ def run_crew(topic: str, mode: str = "fast") -> dict:
                 + hint
                 + " Consider lowering token usage or using a smaller model."
             )
-        else: final_message = f"Error: {error_text}"
+        else:
+            final_message = f"Error: {error_text}"
+            log.error("Crew run failed: %s", error_text)
 
         return {
             "status": "error",
             "topic": topic,
             "result": final_message,
         }
+
 
 if __name__ == "__main__":
     topic = input("Enter request (e.g. 'Plan a $1000 trip to Tokyo for a week'): ").strip()
